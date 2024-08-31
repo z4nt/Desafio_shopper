@@ -1,20 +1,27 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { LeituraResposta } from '../db';
+import { Cliente } from '../db';
+import { Measures } from '../db';
 
 export const router = Router();
 const API_KEY = process.env.GEMINI_API_KEY || "";
 router.post("/upload", async (req, res) => {
+  try{
   //desestruturação do body da requisição
   const { image, customer_code, measure_datetime, measure_type } = req.body;
 
   //validação da requisição
   if (image && customer_code && measure_datetime && measure_type) {
-    const leituraBanco = await LeituraResposta.findAll({
+    const leituraBanco = await Cliente.findAll({
+      include: [
+        {
+          model: Measures,
+          as: 'Measures',
+        },
+      ],
       where: {
         customer_code: customer_code,
-        measure_type: measure_type,
       },
     });
 
@@ -40,21 +47,25 @@ router.post("/upload", async (req, res) => {
       };
       const result = await model.generateContent([prompt, imageParam]);
       const resposta = result.response.text();
-      console.log(resposta)
-      const criarNovaLeituraResposta = {
-        measure_uuid: uuidv4(),
+    
+      const measures = { 
+        measure_uuid : uuidv4(),
+        Measure_Datetime : measure_datetime,
+        measure_type : measure_type,
+        has_confirmed: 0, 
+        image_url: resposta.split('')[1] };
+      const criarNovaCliente = {
         customer_code: customer_code,
         resposta: Number(resposta.split(" ")[0]),
-        measure_type: measure_type,
-        image_url: resposta.split(" ")[1],
+        confirmed_value: null,
       };
-
-      await LeituraResposta.create(criarNovaLeituraResposta);
+      await Measures.create(measures)
+      await Cliente.create(criarNovaCliente);
 
       res.json({
-        image_url: criarNovaLeituraResposta.image_url,
-        measure_uuid: criarNovaLeituraResposta.measure_uuid,
-        resposta: criarNovaLeituraResposta.resposta,
+        image_url: measures.image_url,
+        measure_uuid: measures.measure_uuid,
+        resposta: criarNovaCliente.resposta,
       });
     }
   } else {
@@ -62,6 +73,11 @@ router.post("/upload", async (req, res) => {
       error_code: "INVALID_DATA",
       error_description: "dados inválidos",
     });
+  }}catch (err) {
+    console.error(err.stack);
+    const errForStack = new Error();
+    console.error(errForStack.stack);
+    res.status(500).json({ error: "An error occurred" });
   }
 });
 
@@ -83,9 +99,15 @@ router.patch("/confirm", async (req, res) => {
     });
     return
   }
-  const resultado = await LeituraResposta.findOne({
+  const resultado = await Measures.findOne({
     where: {
       measure_uuid: measure_uuid,
+    },
+  });
+
+  const resultado2 = await Cliente.findOne({
+    where: {
+      confirmed_value: confirmed_value,
     },
   });
 
@@ -100,7 +122,7 @@ router.patch("/confirm", async (req, res) => {
     return
   }
 
-  if (resultado.get('confirmed_value') === confirmed_value) {
+  if (resultado2.get('confirmed_value') === confirmed_value) {
     res.status(409).json(
       {
         "error_code": "CONFIRMATION_DUPLICATE",
@@ -110,7 +132,7 @@ router.patch("/confirm", async (req, res) => {
     return
   }
 
-  await LeituraResposta.update(
+  await Cliente.update(
     { confirmed_value: confirmed_value },
     { where: { measure_uuid: measure_uuid } }
   );
@@ -131,20 +153,22 @@ router.get("/:customer_code/list", async (req, res) => {
   } else {
     //se o customer_code foi informado, checa se o tipo de medição foi informado
     if (measure_type === undefined || measure_type === null) {
-      const resultado = await LeituraResposta.findAll({
+      const resultado = await Cliente.findAll({
         where: {
           customer_code: customer_code
-        }})
-        res.status(200).send(resultado)
+        }
+      })
+      res.status(200).send(resultado)
       return
-    }else{
+    } else {
       //se o customer_code e o tipo de medição foram informados checa se existem leituras
-      if(measure_type === "WATER" || measure_type === "GAS"){
-        const resultado = await LeituraResposta.findAll({
+      if (measure_type === "WATER" || measure_type === "GAS") {
+        const resultado = await Cliente.findAll({
           where: {
             customer_code: customer_code,
             measure_type: measure_type
-          }});
+          }
+        });
         if (resultado.length === 0) {
           res.status(404).json({
             "error_code": "MEASURES_NOT_FOUND",
@@ -154,7 +178,7 @@ router.get("/:customer_code/list", async (req, res) => {
         } else {
           res.status(200).json(resultado);
         }
-      }else{
+      } else {
         res.status(400).json({
           "error_code": "INVALID_DATA",
           "error_description": "Tipo de medição não permitida"

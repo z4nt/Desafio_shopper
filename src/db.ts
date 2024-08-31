@@ -5,11 +5,7 @@ const sequelize = new Sequelize('postgres', 'postgres', '1234', {
   dialect: 'postgres',
 });
 
-export const LeituraResposta = sequelize.define("LeituraResposta", {
-  measure_uuid: {
-    type: DataTypes.TEXT,
-    allowNull: false,
-  },
+export const Cliente = sequelize.define("Cliente", {
   customer_code: {
     type: DataTypes.TEXT,
     allowNull: false,
@@ -22,18 +18,41 @@ export const LeituraResposta = sequelize.define("LeituraResposta", {
     type: DataTypes.INTEGER,
     allowNull: true,
   },
-  measure_type: {
+});
+
+export const Measures = sequelize.define("Measures", {
+  measure_uuid: {
     type: DataTypes.TEXT,
     allowNull: false,
   },
+  Measure_Datetime: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
+  measure_type: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
   image_url: {
     type: DataTypes.TEXT,
-    allowNull: false,
-  }
+    allowNull: true,
+  },
+  has_confirmed: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true},
+  cliente_id: {
+    type: DataTypes.INTEGER,
+    references: {
+      model: Cliente, 
+      key: 'id', 
+      },
+    }
 });
 
-// sequelize.sync({ force: true });
-sequelize.sync();
+Cliente.hasMany(Measures, { foreignKey: "cliente_id" });
+Measures.belongsTo(Cliente, { foreignKey: "cliente_id" });
+sequelize.sync({ force: true });
+// sequelize.sync();
 
 async function executeAuthentication() {
   try {
